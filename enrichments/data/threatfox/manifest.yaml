@@ -4,14 +4,14 @@ category: data
 description: "Threat intelligence IOC feed from abuse.ch ThreatFox — IPs, domains, URLs, and hashes"
 icon: shield
 author: nano
-version: 1
-requires_credential: optional
+version: 2
+requires_credential: required
 credential_fields:
   - name: API_KEY
-    label: API Key
+    label: Auth Key
     field_type: secret
-    required: false
-    help: "Optional — increases rate limits. Get at https://threatfox.abuse.ch/api/"
+    required: true
+    help: "Required — abuse.ch moved the ThreatFox API behind mandatory auth. Register for a free Auth Key at https://auth.abuse.ch"
 allowed_domains:
   - threatfox-api.abuse.ch
 config:
@@ -20,6 +20,7 @@ config:
   key_type: ip
   is_ioc: true
   refresh_schedule: "0 */6 * * *"
+changelog: "Fix Auth-Key header (abuse.ch ignored the previous API-KEY header); mark credential required after abuse.ch moved the API behind mandatory auth"
 tags:
   - threat-intel
   - ioc
