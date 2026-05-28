@@ -21,7 +21,7 @@ async function enrich(context: {
     "Content-Type": "application/json",
   };
   if (context.credentials.API_KEY) {
-    headers["API-KEY"] = context.credentials.API_KEY;
+    headers["Auth-Key"] = context.credentials.API_KEY;
   }
 
   // Fetch recent IOCs (last 7 days or since watermark)
