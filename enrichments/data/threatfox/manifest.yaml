@@ -4,7 +4,7 @@ category: data
 description: "Threat intelligence IOC feed from abuse.ch ThreatFox — IPs, domains, URLs, and hashes"
 icon: shield
 author: nano
-version: 2
+version: 3
 requires_credential: required
 credential_fields:
   - name: API_KEY
@@ -16,11 +16,11 @@ allowed_domains:
   - threatfox-api.abuse.ch
 config:
   color: orange
-  key_field: ioc_value
+  key_field: ioc
   key_type: ip
   is_ioc: true
   refresh_schedule: "0 */6 * * *"
-changelog: "Fix Auth-Key header (abuse.ch ignored the previous API-KEY header); mark credential required after abuse.ch moved the API behind mandatory auth"
+changelog: "Emit IOC value at top-level `key` (abuse.ch field is `ioc`, not `ioc_value`); hoist threat_type/malware/confidence to top level so dedicated ClickHouse columns populate (NAN-1105). Without this every record landed with key_value=\"\" and ReplacingMergeTree collapsed thousands of IOCs into one row."
 tags:
   - threat-intel
   - ioc

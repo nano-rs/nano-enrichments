@@ -5,6 +5,14 @@ interface EnrichmentRecord {
   key: string;
   risk_score?: number;
   tags?: string[];
+  // IOC-typed columns that nanosiem's Rust scheduler reads at the top level
+  // and writes into dedicated ClickHouse columns. Required for IOC data
+  // enrichments (NAN-1105). Without these the per-IOC columns stay blank
+  // and the ReplacingMergeTree-backed results table collapses every row
+  // with key_value="" into one dedup-survivor.
+  threat_type?: string;
+  malware?: string;
+  confidence?: number;
   data: Record<string, unknown>;
 }
 
@@ -55,9 +63,17 @@ async function enrich(context: {
           : 50;
 
     return {
-      key: ioc.ioc_value,
+      // The abuse.ch ThreatFox API v1 response field for the IOC value is
+      // `ioc`, not `ioc_value`. The previous code read a non-existent field
+      // so every row landed with key_value="" and ReplacingMergeTree
+      // collapsed thousands of IOCs into one (NAN-1105).
+      key: ioc.ioc,
       risk_score: risk,
       tags,
+      // Top-level IOC fields populate the dedicated ClickHouse columns.
+      threat_type: ioc.threat_type,
+      malware: ioc.malware,
+      confidence: ioc.confidence_level,
       data: {
         ioc_type: ioc.ioc_type,
         threat_type: ioc.threat_type,
