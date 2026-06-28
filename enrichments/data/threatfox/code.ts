@@ -21,6 +21,25 @@ interface DataEnrichmentResult {
   watermark?: string;
 }
 
+// ThreatFox encodes the port in `ip:port`-typed IOCs (e.g. "1.2.3.4:443").
+// The IOC key must be the BARE IP, because nanosiem matches IOCs against the
+// UDM `src_ip`/`dest_ip` columns, which store bare addresses — a `:port`
+// suffix guarantees a miss, so every IP IOC silently fails to match at scale
+// (NAN-1586). IPv6 ip:port is bracketed ("[2001:db8::1]:443"). Only `ip:port`
+// records are touched; domain/url/hash IOCs pass through unchanged.
+function iocKey(rawValue: string, iocType: string): string {
+  if (iocType !== "ip:port") return rawValue;
+  if (rawValue.startsWith("[")) {
+    const end = rawValue.indexOf("]");
+    return end > 1 ? rawValue.slice(1, end) : rawValue;
+  }
+  const lastColon = rawValue.lastIndexOf(":");
+  if (lastColon > 0 && /^\d+$/.test(rawValue.slice(lastColon + 1))) {
+    return rawValue.slice(0, lastColon);
+  }
+  return rawValue;
+}
+
 async function enrich(context: {
   lastWatermark?: string;
   credentials: Record<string, string>;
@@ -74,7 +93,11 @@ async function enrich(context: {
         // `ioc`, not `ioc_value`. The previous code read a non-existent
         // field so every row landed with key_value="" and ReplacingMergeTree
         // collapsed thousands of IOCs into one (NAN-1105).
-        key: ioc.ioc,
+        //
+        // `ip:port` IOCs are stripped to the bare IP so they match the UDM
+        // src_ip/dest_ip columns (NAN-1586); the original value is preserved
+        // in `data.ioc_raw` below.
+        key: iocKey(ioc.ioc, ioc.ioc_type),
         risk_score: risk,
         tags,
         // Top-level IOC fields populate the dedicated ClickHouse columns.
@@ -91,6 +114,9 @@ async function enrich(context: {
         // downstream consumers; don't simplify without auditing them first.
         data: {
           ioc_type: ioc.ioc_type,
+          // Original abuse.ch value, incl. the port for `ip:port` IOCs that
+          // `key` strips — keep it so the C2 port isn't lost (NAN-1586).
+          ioc_raw: ioc.ioc,
           threat_type: ioc.threat_type,
           malware: ioc.malware,
           confidence: ioc.confidence_level,
