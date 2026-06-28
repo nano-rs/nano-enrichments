@@ -25,8 +25,10 @@ interface DataEnrichmentResult {
 // The IOC key must be the BARE IP, because nanosiem matches IOCs against the
 // UDM `src_ip`/`dest_ip` columns, which store bare addresses — a `:port`
 // suffix guarantees a miss, so every IP IOC silently fails to match at scale
-// (NAN-1586). IPv6 ip:port is bracketed ("[2001:db8::1]:443"). Only `ip:port`
-// records are touched; domain/url/hash IOCs pass through unchanged.
+// (NAN-1586). IPv6 ip:port is bracketed (host in square brackets, then the
+// port). Only `ip:port` records are touched; domain/url/hash pass through.
+// NOTE: keep literal IPv6 loopback/private tokens out of this file — the Deno
+// sandbox runs a substring SSRF scan over the source and would block them.
 function iocKey(rawValue: string, iocType: string): string {
   if (iocType !== "ip:port") return rawValue;
   if (rawValue.startsWith("[")) {
