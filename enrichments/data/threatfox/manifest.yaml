@@ -4,7 +4,7 @@ category: data
 description: "Threat intelligence IOC feed from abuse.ch ThreatFox — IPs, domains, URLs, and hashes"
 icon: shield
 author: nano
-version: 4
+version: 5
 requires_credential: required
 credential_fields:
   - name: API_KEY
@@ -20,7 +20,7 @@ config:
   key_type: ip
   is_ioc: true
   refresh_schedule: "0 */6 * * *"
-changelog: "Strip the port from `ip:port` IOCs so the key is a bare IP that matches the UDM src_ip/dest_ip columns (NAN-1586) — previously IP IOCs landed as `1.2.3.4:443` and never matched; original value preserved in `data.ioc_raw`. (v3: emit IOC value at top-level `key` from abuse.ch `ioc` field, hoist threat_type/malware/confidence to top level so dedicated ClickHouse columns populate — NAN-1105.)"
+changelog: "v5: remove a literal IPv6 example from a code comment — the `::1` substring tripped the Deno sandbox SSRF scan and failed every run (NAN-1586). v4: strip the port from `ip:port` IOCs so the key is a bare IP that matches the UDM src_ip/dest_ip columns — previously IP IOCs landed as `1.2.3.4:443` and never matched; original value preserved in `data.ioc_raw`. (v3: emit IOC value at top-level `key` from abuse.ch `ioc` field, hoist threat_type/malware/confidence so dedicated ClickHouse columns populate — NAN-1105.)"
 tags:
   - threat-intel
   - ioc
