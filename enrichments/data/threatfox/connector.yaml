@@ -1,0 +1,47 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). JSON POST whose `days`
+# depends on the saved watermark, so the first request comes from VRL.
+version: 1
+name: threatfox
+kind: data_enrichment
+allow:
+  - host: threatfox-api.abuse.ch
+    path_prefixes: ["/api/v1"]
+auth: { type: api_key_header, header: Auth-Key, credential: API_KEY, optional: true }
+streams:
+  - id: iocs
+    program: |
+      status = to_int(.response.status) ?? 0
+      if .response == null {
+        days = if .state.watermark == null { 7 } else { 1 }
+        {"next_request": {"url": "https://threatfox-api.abuse.ch/api/v1/", "method": "POST", "json": {"query": "get_iocs", "days": days}}}
+      } else if status < 200 || status >= 300 {
+        {"error": "ThreatFox API error: " + to_string(status)}
+      } else if .response.body.query_status != "ok" || !is_array(.response.body.data) {
+        {"events": [], "state": {"watermark": .now}}
+      } else {
+        recs = []
+        for_each(array!(.response.body.data)) -> |_i, ioc| {
+          if is_string(ioc.ioc) && strlen!(ioc.ioc) > 0 {
+            raw = string!(ioc.ioc)
+            key = raw
+            if ioc.ioc_type == "ip:port" {
+              m = parse_regex(raw, r'^\[(?P<h>[^\]]+)\]') ?? parse_regex(raw, r'^(?P<h>.+):\d+$') ?? null
+              if m != null { key = m.h }
+            }
+            tags = []
+            if is_string(ioc.threat_type) && ioc.threat_type != "" { tags = push(tags, ioc.threat_type) }
+            if is_string(ioc.malware) && ioc.malware != "" { tags = push(tags, ioc.malware) }
+            if is_array(ioc.tags) { tags = append(tags, array!(ioc.tags)) }
+            cl = to_int(ioc.confidence_level) ?? 0
+            risk = if cl >= 75 { 90 } else if cl >= 50 { 70 } else { 50 }
+            recs = push(recs, {
+              "key": key, "risk_score": risk, "tags": tags,
+              "threat_type": ioc.threat_type, "malware": ioc.malware, "confidence": ioc.confidence_level,
+              "data": {"ioc_type": ioc.ioc_type, "ioc_raw": raw, "threat_type": ioc.threat_type, "malware": ioc.malware,
+                       "confidence": ioc.confidence_level, "reporter": ioc.reporter, "reference": ioc.reference,
+                       "first_seen": ioc.first_seen_utc, "last_seen": ioc.last_seen_utc}
+            })
+          }
+        }
+        {"events": recs, "state": {"watermark": .now}}
+      }

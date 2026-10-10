@@ -1,0 +1,35 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). VRL picks the type path.
+version: 1
+name: otx
+kind: agent_enrichment
+allow:
+  - host: otx.alienvault.com
+    path_prefixes: ["/api/v1/indicators"]
+auth: { type: api_key_header, header: X-OTX-API-KEY, credential: API_KEY }
+streams:
+  - id: lookup
+    program: |
+      status = to_int(.response.status) ?? 0
+      typ = string!(.input.artifact_type)
+      if .response == null {
+        p = if typ == "domain" { "domain" } else if typ == "hash" { "file" } else if typ == "url" { "url" } else { "IPv4" }
+        {"next_request": {"url": "https://otx.alienvault.com/api/v1/indicators/" + p + "/" + encode_percent(string!(.input.artifact), "COMPONENT") + "/general"}}
+      } else if status == 404 {
+        {"events": [{"key": .input.artifact, "key_type": typ, "data": {"found": false, "pulse_count": 0}}]}
+      } else if status < 200 || status >= 300 {
+        {"error": "OTX API error: " + to_string(status)}
+      } else {
+        d = object(.response.body) ?? {}
+        pc = to_int(d.pulse_info.count) ?? to_int(d.count) ?? 0
+        tags = []
+        if pc > 0 { tags = push(tags, "in-pulse") }
+        if pc >= 5 { tags = push(tags, "multi-pulse") }
+        risk = pc * 15
+        if risk > 100 { risk = 100 }
+        pulses = if is_array(d.pulse_info.pulses) { array!(d.pulse_info.pulses) } else { [] }
+        if length(pulses) > 5 { pulses = slice!(pulses, 0, 5) }
+        pulses = map_values(pulses) -> |p| { {"name": p.name, "created": p.created, "tags": p.tags} }
+        country = if d.country_code != null { d.country_code } else { d.country }
+        {"events": [{"key": .input.artifact, "key_type": typ, "risk_score": risk, "tags": tags,
+          "data": {"pulse_count": pc, "reputation": d.reputation, "country": country, "pulses": pulses}}]}
+      }

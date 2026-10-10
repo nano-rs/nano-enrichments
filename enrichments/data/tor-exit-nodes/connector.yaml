@@ -1,0 +1,28 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). Line-format
+# response; VRL drops comments and shapes records.
+version: 1
+name: tor_exit_nodes
+kind: data_enrichment
+allow:
+  - host: check.torproject.org
+    path_prefixes: ["/torbulkexitlist"]
+streams:
+  - id: exits
+    request:
+      url: "https://check.torproject.org/torbulkexitlist"
+      query: { ip: "1.1.1.1" }
+    response: { format: lines }
+    program: |
+      status = to_int(.response.status) ?? 0
+      if status < 200 || status >= 300 {
+        {"error": "Tor exit list error: " + to_string(status)}
+      } else {
+        recs = []
+        for_each(array!(.response.body)) -> |_i, l| {
+          if !starts_with(string!(l), "#") {
+            recs = push(recs, {"key": l, "risk_score": 40, "tags": ["tor", "exit-node"],
+              "data": {"source": "torproject.org", "node_type": "exit", "fetched_at": .now}})
+          }
+        }
+        {"events": recs, "state": {"watermark": .now}}
+      }

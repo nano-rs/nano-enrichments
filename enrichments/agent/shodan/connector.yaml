@@ -1,0 +1,57 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). Two-step lookup for a
+# domain (resolve, then host) through the VRL loop; the key goes in the query
+# via the api_key_query auth plugin, never through a template.
+version: 1
+name: shodan
+kind: agent_enrichment
+allow:
+  - host: api.shodan.io
+    path_prefixes: ["/dns/resolve", "/shodan/host"]
+auth: { type: api_key_query, param: key, credential: API_KEY }
+streams:
+  - id: lookup
+    program: |
+      status = to_int(.response.status) ?? 0
+      art = string!(.input.artifact)
+      typ = string!(.input.artifact_type)
+      if .response == null {
+        if typ == "domain" {
+          {"next_request": {"url": "https://api.shodan.io/dns/resolve", "query": {"hostnames": art}}}
+        } else {
+          {"next_request": {"url": "https://api.shodan.io/shodan/host/" + encode_percent(art, "COMPONENT")}}
+        }
+      } else if .state.resolved_ip == null && typ == "domain" {
+        if status == 404 {
+          {"events": [{"key": art, "key_type": typ, "data": {"found": false}}]}
+        } else if status < 200 || status >= 300 {
+          {"error": "Shodan API error: " + to_string(status)}
+        } else {
+          ip = get(.response.body, [art]) ?? null
+          if ip == null || ip == "" {
+            {"events": [{"key": art, "key_type": "domain", "data": {"found": false}}]}
+          } else {
+            {"state": {"resolved_ip": ip}, "next_request": {"url": "https://api.shodan.io/shodan/host/" + string!(ip)}}
+          }
+        }
+      } else if typ == "domain" && (status < 200 || status >= 300) {
+        {"events": [{"key": art, "key_type": "domain", "data": {"resolved_ip": .state.resolved_ip, "found": false}}]}
+      } else if status == 404 {
+        {"events": [{"key": art, "key_type": typ, "data": {"found": false}}]}
+      } else if status < 200 || status >= 300 {
+        {"error": "Shodan API error: " + to_string(status)}
+      } else {
+        d = object(.response.body) ?? {}
+        ports = if is_array(d.ports) { array!(d.ports) } else { [] }
+        tags = []
+        if includes(ports, 22) { tags = push(tags, "ssh") }
+        if includes(ports, 3389) { tags = push(tags, "rdp") }
+        vulns = if is_array(d.vulns) { array!(d.vulns) } else { [] }
+        if length(vulns) > 0 { tags = push(tags, "vulnerable") }
+        if is_array(d.tags) { tags = append(tags, array!(d.tags)) }
+        risk = 20 + length(ports) * 3 + length(vulns) * 15
+        if risk > 100 { risk = 100 }
+        kt = if typ == "domain" { "domain" } else { "ip" }
+        {"events": [{"key": art, "key_type": kt, "risk_score": risk, "tags": tags,
+          "data": {"ip": d.ip_str, "hostnames": d.hostnames, "country_code": d.country_code, "city": d.city,
+                   "org": d.org, "isp": d.isp, "os": d.os, "ports": ports, "vulns": d.vulns, "last_update": d.last_update}}]}
+      }
