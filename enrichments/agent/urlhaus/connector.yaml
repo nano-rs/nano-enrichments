@@ -1,0 +1,35 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). Form POST; VRL picks
+# the endpoint by artifact type.
+version: 1
+name: urlhaus
+kind: agent_enrichment
+allow:
+  - host: urlhaus-api.abuse.ch
+    path_prefixes: ["/v1/host", "/v1/url"]
+streams:
+  - id: lookup
+    program: |
+      status = to_int(.response.status) ?? 0
+      typ = string!(.input.artifact_type)
+      if .response == null {
+        if typ == "domain" {
+          {"next_request": {"url": "https://urlhaus-api.abuse.ch/v1/host/", "form": {"host": .input.artifact}}}
+        } else {
+          {"next_request": {"url": "https://urlhaus-api.abuse.ch/v1/url/", "form": {"url": .input.artifact}}}
+        }
+      } else if status < 200 || status >= 300 {
+        {"error": "URLhaus API error: " + to_string(status)}
+      } else if .response.body.query_status == "no_results" {
+        {"events": [{"key": .input.artifact, "key_type": typ, "data": {"found": false}}]}
+      } else {
+        d = object(.response.body) ?? {}
+        tags = []
+        if is_string(d.threat) && d.threat != "" { tags = push(tags, d.threat) }
+        if is_array(d.tags) { tags = append(tags, array!(d.tags)) }
+        if d.url_status == "online" { tags = push(tags, "online") }
+        if d.blacklists.spamhaus_dbl != null && d.blacklists.spamhaus_dbl != false && d.blacklists.spamhaus_dbl != "" { tags = push(tags, "spamhaus-listed") }
+        risk = if d.threat == "malware_download" { 90 } else if (to_int(d.urls_online) ?? 0) > 0 { 70 } else { 30 }
+        {"events": [{"key": .input.artifact, "key_type": typ, "risk_score": risk, "tags": tags,
+          "data": {"threat": d.threat, "url_status": d.url_status, "url_count": d.url_count, "urls_online": d.urls_online,
+                   "blacklists": d.blacklists, "date_added": d.date_added, "host": d.host}}]}
+      }

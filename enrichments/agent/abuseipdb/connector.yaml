@@ -1,0 +1,37 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490). Declarative request,
+# VRL mapping.
+version: 1
+name: abuseipdb
+kind: agent_enrichment
+allow:
+  - host: api.abuseipdb.com
+    path_prefixes: ["/api/v2/check"]
+auth: { type: api_key_header, header: Key, credential: API_KEY }
+streams:
+  - id: lookup
+    request:
+      url: "https://api.abuseipdb.com/api/v2/check"
+      query: { ipAddress: "{{input.artifact}}", maxAgeInDays: "90", verbose: "true" }
+      headers: { Accept: application/json }
+    program: |
+      status = to_int(.response.status) ?? 0
+      if status < 200 || status >= 300 {
+        {"error": "AbuseIPDB API error: " + to_string(status)}
+      } else {
+        d = object(.response.body.data) ?? {}
+        tags = []
+        if d.isTor == true { tags = push(tags, "tor") }
+        if d.isWhitelisted == true { tags = push(tags, "whitelisted") }
+        if (to_int(d.totalReports) ?? 0) > 0 { tags = push(tags, "reported") }
+        score = to_int(d.abuseConfidenceScore) ?? 0
+        if score >= 80 { tags = push(tags, "high-abuse") }
+        if score > 100 { score = 100 }
+        {"events": [{
+          "key": .input.artifact, "key_type": "ip", "risk_score": score, "tags": tags,
+          "data": {
+            "abuse_confidence": d.abuseConfidenceScore, "total_reports": d.totalReports,
+            "country_code": d.countryCode, "isp": d.isp, "domain": d.domain, "usage_type": d.usageType,
+            "is_tor": d.isTor, "is_whitelisted": d.isWhitelisted, "last_reported_at": d.lastReportedAt
+          }
+        }]}
+      }

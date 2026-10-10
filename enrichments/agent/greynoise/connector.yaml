@@ -1,0 +1,31 @@
+# nano-connector spec that replaces code.ts in this directory (NAN-3490).
+version: 1
+name: greynoise
+kind: agent_enrichment
+allow:
+  - host: api.greynoise.io
+    path_prefixes: ["/v3/community"]
+auth: { type: api_key_header, header: key, credential: API_KEY }
+streams:
+  - id: lookup
+    request:
+      url: "https://api.greynoise.io/v3/community/{{input.artifact}}"
+      headers: { Accept: application/json }
+    program: |
+      status = to_int(.response.status) ?? 0
+      if status == 404 {
+        {"events": [{"key": .input.artifact, "key_type": "ip", "data": {"found": false, "noise": false, "riot": false}}]}
+      } else if status < 200 || status >= 300 {
+        {"error": "GreyNoise API error: " + to_string(status)}
+      } else {
+        d = object(.response.body) ?? {}
+        tags = []
+        if d.noise == true { tags = push(tags, "internet-noise") }
+        if d.riot == true { tags = push(tags, "benign-service") }
+        if d.classification == "malicious" { tags = push(tags, "malicious") }
+        if d.classification == "benign" { tags = push(tags, "benign") }
+        risk = if d.classification == "malicious" { 80 } else if d.classification == "unknown" && d.noise == true { 40 } else if d.classification == "benign" { 5 } else { 0 }
+        {"events": [{"key": .input.artifact, "key_type": "ip", "risk_score": risk, "tags": tags,
+          "data": {"noise": d.noise, "riot": d.riot, "classification": d.classification, "name": d.name,
+                   "link": d.link, "last_seen": d.last_seen, "message": d.message}}]}
+      }

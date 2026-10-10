@@ -37,16 +37,58 @@ Today the catalog ships:
 enrichments/
   agent/<slug>/
     manifest.yaml
+    connector.yaml
     code.ts
   data/<slug>/
     manifest.yaml
+    connector.yaml
     code.ts
 ```
 
-Each enrichment is a directory with two files:
+Each enrichment is a directory with three files:
 
 - `manifest.yaml` — name, slug, category, credential requirements, schedule, allowed outbound domains, tags.
-- `code.ts` — the actual TypeScript that runs in nano's Deno sandbox.
+- `connector.yaml` — the declarative nano connector spec (NAN-3490) that
+  replaces `code.ts`. The manifest's `runtime` (`deno` or `connector`) says
+  which one runs, and `connector_spec` names the file. The spec format is
+  documented in nanosiem's `nano-connector/docs/AUTHORING.md`.
+- `code.ts` — the TypeScript that runs in nano's Deno sandbox, until the
+  cutover to the connector engine.
+
+Custom Deno enrichments written outside this repo have no conversion path;
+they stop running at the cutover.
+
+## Shadow runs
+
+`testing/shadow/` proves each `connector.yaml` returns what its `code.ts`
+returns. For every enrichment it runs the unmodified script (under a port of
+nano's Deno auth wrapper) and `nano-connector shadow` against the same vendor
+mock (`testing/shadow/vendors.ts`, synthetic data that checks each vendor's
+auth) and compares the results:
+
+- agent enrichments: the result object, including the not-found paths;
+- data enrichments: the records (minus the wall-clock `fetched_at`), and that
+  the watermark advances.
+
+A contract test needs no binary and always runs: every enrichment has a
+`connector.yaml` that its manifest names, with a `runtime`, the right `kind`,
+and only credentials the manifest declares.
+
+```sh
+# contract only
+deno test --allow-read --allow-env testing/shadow/shadow.test.ts
+# full shadow run
+NANO_CONNECTOR_BIN=/path/to/nano-connector \
+  deno test --allow-read --allow-write --allow-net=127.0.0.1 --allow-run --allow-env \
+  testing/shadow/shadow.test.ts
+```
+
+Without `NANO_CONNECTOR_BIN` the shadow tests are skipped, unless
+`NANO_SHADOW_REQUIRED=1` (CI). `.github/workflows/shadow.yml` builds
+`nano-connector` from nanosiem.
+
+MalwareBazaar: the spec sends no key, like `code.ts`. abuse.ch now requires an
+`Auth-Key` on its APIs, so both need a credential field in a follow-up.
 
 ## Writing your own
 
