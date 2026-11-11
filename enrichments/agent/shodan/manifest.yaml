@@ -4,7 +4,7 @@ category: agent
 description: "IP and host reconnaissance — ports, vulnerabilities, services"
 icon: search
 author: nano
-version: 1
+version: 2
 requires_credential: required
 credential_fields:
   - name: API_KEY
@@ -25,7 +25,10 @@ tags:
   - infrastructure
 
 # NAN-3490: connector.yaml is the declarative nano-connector spec that
-# replaces code.ts. `runtime` picks which one nano runs; it stays `deno` until
-# cutover, and the shadow-run harness keeps the two event-for-event identical.
-runtime: deno
+# replaces code.ts. `runtime` picks which one nano runs.
+# NAN-5284: Shodan runs on its connector. It sends the API key as `?key=`,
+# which the wasm sandbox (headers-only credentials) refuses, so nano installs
+# this entry as its built-in Shodan threat-intel provider. nano releases that
+# do not read `runtime` still install code.ts on Deno.
+runtime: connector
 connector_spec: connector.yaml
