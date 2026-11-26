@@ -6,15 +6,11 @@ into your nano deployment without writing any code.
 
 ## Using this catalog
 
-In your nano UI, go to **Settings → Marketplace → Repositories** and add:
-
-```
-https://github.com/nano-rs/nano-enrichments
-```
-
-The marketplace catalog populates a few minutes later. From the catalog you can
-install any enrichment with one click — supply credentials when prompted, and
-that's it.
+nano installs this catalog by default. Every install receives it as a signed
+content bundle published by app.nano.rs, so there is no repository to add, and
+nano does not accept third-party catalogs. Open **Marketplace**, find the
+enrichment, and install it with one click. Supply credentials when prompted,
+and that's it.
 
 ## What's in here
 
@@ -47,12 +43,12 @@ enrichments/
 
 Each enrichment is a directory with three files:
 
-- `manifest.yaml` — name, slug, category, credential requirements, schedule, allowed outbound domains, tags.
-- `connector.yaml` — the declarative nano connector spec (NAN-3490) that
+- `manifest.yaml`: name, slug, category, credential requirements, schedule, allowed outbound domains, tags.
+- `connector.yaml`: the declarative nano connector spec (NAN-3490) that
   replaces `code.ts`. The manifest's `runtime` (`deno` or `connector`) says
   which one runs, and `connector_spec` names the file. The spec format is
   documented in nanosiem's `nano-connector/docs/AUTHORING.md`.
-- `code.ts` — the TypeScript that runs in nano's Deno sandbox, until the
+- `code.ts`: the TypeScript that runs in nano's Deno sandbox, until the
   cutover to the connector engine.
 
 Custom Deno enrichments written outside this repo have no conversion path;
@@ -93,7 +89,7 @@ MalwareBazaar: the spec sends no key, like `code.ts`. abuse.ch now requires an
 ## Writing your own
 
 The two enrichment shapes have different entry points. Both export a single
-`enrich` function and receive credentials at call time — never hard-code keys.
+`enrich` function and receive credentials at call time. Never hard-code keys.
 
 **Agent (on-demand lookup):**
 
@@ -127,7 +123,7 @@ credential rotation) is in the [nano docs](https://nano.rs/docs/).
 
 Pull requests welcome. Bump the manifest `version` whenever you change `code.ts`
 or the manifest schema, and add a one-line `changelog:` describing what
-changed — installed enrichments use that to surface "an update is available"
+changed. Installed enrichments use that to surface "an update is available"
 in the UI.
 
 ## License
